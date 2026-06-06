@@ -1,0 +1,88 @@
+# YOLO11-DAU (Ablation: remove CA & CBAM-S, reindex layers)
+
+nc: 10
+scales:
+
+  l: [1.00, 1.00, 512]
+
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]                           # 0-P1/2
+  - [-1, 1, SADEConv, [128, 3, 2, softmax, 1.0]]
+  - [-1, 2, C3k2, [256, False, 0.25]]
+
+  - [-1, 1, SADEConv, [256, 3, 2, softmax, 1.0]] # 3-P3/8
+  - [-1, 2, C3k2, [512, False, 0.25]]
+
+  - [-1, 1, Conv, [512, 3, 2]]                         # 5S-P4/16
+  - [-1, 2, C3k2, [512, True]]
+
+  - [-1, 1, Conv, [1024, 3, 2]]                        # 7-P5/32
+  - [-1, 2, C3k2, [1024, True]]
+
+  - [-1, 1, SPPF, [1024, 5]]                           # 9
+  - [-1, 2, C2PSA, [1024]]                             # 10
+head:
+  # ============ Top-Down Layer 3 (P5 -> P4) ============
+  - [-1, 1, Conv, [1024, 1, 1]]#11
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 12: Upsample P5
+
+  # [黄色框 P4]
+  - [6, 1, Conv, [512, 1, 1]]                   # 13: 1x1 Conv on Backbone P4 (用于后续绿色虚线连接)
+
+  - [[-1, 12], 1, Concat, [1]]                  # 14: Concat (1x1_P4 + Upsampled_P5)
+  - [-1, 2, C3k2, [512, False]]                 # 15: Neck P4 Output
+
+
+  # ============ Top-Down Layer 2 (P4 -> P3) ============
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 16: Upsample Neck P4
+
+  # [黄色框 P3]
+  - [4, 1, Conv, [512, 1, 1]]                   # 17: 1x1 Conv on Backbone P3 (用于后续绿色虚线连接)
+
+  - [[-1, 16], 1, Concat, [1]]                  # 18: Concat (1x1_P3 + Upsampled_P4)
+  - [-1, 2, C3k2, [256, False]]                 # 19: Neck P3 Output
+
+
+  # ============ Top-Down Layer 1 (P3 -> P2) ============
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 20: Upsample Neck P3
+
+  # [新增: 黄色框 P2] (这里是你要求的修改点)
+  - [2, 1, Conv, [256, 1, 1]]                   # 21: 1x1 Conv on Backbone P2
+
+  - [[-1, 20], 1, Concat, [1]]                  # 22: Concat (1x1_P2 + Upsampled_P3)
+  - [-1, 2, C3k2, [128, False]]                 # 23: Neck P2 Output
+
+
+  # ============ P2 Head Branch (Green Box) ============
+  # [绿色框 Attention]
+
+
+
+  # ============ Bottom-Up Layer 1 (P2 -> P3) ============
+  - [23, 1, Conv, [128, 3, 2]]                  # 25: Downsample P2
+
+  # Concat 三路输入:
+  # 1. 当前层 (-1, 即 P2下采样)
+  # 2. Neck P3 (18)
+  # 3. Backbone P3 1x1 (16) <--- 对应图中绿色虚线
+  - [[-1, 17, 19], 1, Concat, [1]]              # 26: 3-Way Concat
+
+  - [-1, 2, C3k2, [256, False]]                 # 27: P3 Output (To Detect)
+
+
+  # ============ Bottom-Up Layer 2 (P3 -> P4) ============
+  - [-1, 1, Conv, [256, 3, 2]]                  # 28: Downsample P3
+
+  # Concat 三路输入:
+  # 1. 当前层 (-1, 即 P3下采样)
+  # 2. Neck P4 (14)
+  # 3. Backbone P4 1x1 (12) <--- 对应图中绿色虚线
+  - [[-1, 13, 15], 1, Concat, [1]]              # 29: 3-Way Concat
+
+  - [-1, 2, C3k2, [512, False]]                 # 30: P4 Output (To Detect)
+
+
+  # ============ Detect Head ============
+  - [[23, 26, 29], 1, RDC_Head, [nc]]             # 31: Detect Inputs [P2_Attn, P3, P4]
