@@ -51,14 +51,41 @@ ultralytics/nn/tasks.py
 
 ## Environment
 
-Create the environment from the provided file:
+The experiments in this repository were run with the local Conda environment `cuda129`.
+
+Current environment:
+
+| Item | Version |
+| --- | --- |
+| OS | Windows |
+| Conda env | `cuda129` |
+| Python | 3.12.12 |
+| PyTorch | 2.8.0+cu129 |
+| TorchVision | 0.23.0+cu129 |
+| CUDA | 12.9 |
+| GPU | NVIDIA GeForce RTX 5060 Ti |
+| Ultralytics | 8.3.224 |
+
+Main Python packages:
+
+| Package | Version |
+| --- | --- |
+| numpy | 2.2.6 |
+| opencv-python | 4.12.0.88 |
+| pandas | 2.3.3 |
+| matplotlib | 3.10.7 |
+| PyYAML | 6.0.3 |
+| pillow | 12.0.0 |
+| tqdm | 4.67.1 |
+| scipy | 1.16.2 |
+
+Activate the environment:
 
 ```bash
-conda env create -f environment.yml
-conda activate pe-yolo
+conda activate cuda129
 ```
 
-Alternatively, install the project in editable mode:
+If the local package entry point is unavailable, install the project in editable mode from the repository root:
 
 ```bash
 pip install -e .
@@ -69,6 +96,7 @@ pip install -e .
 Example command for training PE-YOLO on VisDrone:
 
 ```bash
+conda activate cuda129
 yolo detect train \
   model=ultralytics/cfg/models/11/PE-YOLO(n).yaml \
   data=ultralytics/cfg/datasets/VisDrone.yaml \
@@ -81,6 +109,7 @@ yolo detect train \
 ## Validation
 
 ```bash
+conda activate cuda129
 yolo detect val \
   model=runs/detect/PE-YOLO(n)-visdrone-200/weights/best.pt \
   data=ultralytics/cfg/datasets/VisDrone.yaml \
@@ -117,6 +146,7 @@ runs/detect/PE-YOLO(n)-visdrone-200/weights/last.pt
 Run visualization scripts:
 
 ```bash
+conda activate cuda129
 python run_vis.py
 python yolo11-visualize_heatmap.py
 ```
