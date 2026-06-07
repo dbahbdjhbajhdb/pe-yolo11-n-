@@ -80,6 +80,7 @@ from ultralytics.nn.modules import (
 from ultralytics.nn.modules.block import (
     RFAConv,
     SADEConv,
+    ESADConv,
     MSRA_RFAConv,
     StandardRFAConv,
     CARAFE,
@@ -1586,6 +1587,7 @@ def parse_model(d, ch, verbose=True):
             A2C2f,
             RFAConv,
             SADEConv,
+            ESADConv,
             MSRA_RFAConv,
             StandardRFAConv,
         }

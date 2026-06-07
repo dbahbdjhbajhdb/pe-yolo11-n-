@@ -3927,6 +3927,84 @@ class SADEConv(nn.Module):
 MSRA_RFAConv = SADEConv
 
 
+class ESADConv(nn.Module):
+    """
+    Edge-aware spatial adaptive downsampling convolution.
+
+    The module preserves fine spatial detail with a space-to-depth path, enhances
+    directional high-frequency responses, and fuses base/scale/detail experts with
+    spatially adaptive weights.
+    """
+
+    def __init__(self, c1, c2, k=3, s=2, gate_ratio=0.25):
+        super().__init__()
+        self.stride = s
+
+        hidden = max(int(c2 * gate_ratio), 16)
+
+        self.base_branch = Conv(c1, c2, k=k, s=s)
+        self.spd_branch = Conv(c1 * 4 if s == 2 else c1, c2, k=1, s=1)
+
+        self.edge_h = nn.Conv2d(c1, c1, kernel_size=(1, 3), stride=1, padding=(0, 1), groups=c1, bias=False)
+        self.edge_v = nn.Conv2d(c1, c1, kernel_size=(3, 1), stride=1, padding=(1, 0), groups=c1, bias=False)
+        self.edge_d = nn.Conv2d(c1, c1, kernel_size=3, stride=1, padding=2, dilation=2, groups=c1, bias=False)
+        self.edge_fuse = Conv(c1 * 3, c2, k=1, s=1)
+
+        self.scale_3 = nn.Conv2d(c1, c1, kernel_size=3, stride=s, padding=1, groups=c1, bias=False)
+        self.scale_5 = nn.Conv2d(c1, c1, kernel_size=5, stride=s, padding=2, groups=c1, bias=False)
+        self.scale_d = nn.Conv2d(c1, c1, kernel_size=3, stride=s, padding=2, dilation=2, groups=c1, bias=False)
+        self.scale_fuse = Conv(c1 * 3, c2, k=1, s=1)
+
+        self.fusion_gate = nn.Sequential(
+            nn.Conv2d(c2 * 4, hidden, kernel_size=1, bias=False),
+            nn.BatchNorm2d(hidden),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(hidden, 4, kernel_size=1, bias=True),
+        )
+        self.out = Conv(c2, c2, k=1, s=1)
+
+    @staticmethod
+    def _match_size(x, size):
+        if x.shape[-2:] == size:
+            return x
+        return F.interpolate(x, size=size, mode="nearest")
+
+    def _downsample_detail(self, x, size):
+        detail = x - F.avg_pool2d(x, kernel_size=3, stride=1, padding=1)
+        if self.stride > 1:
+            detail = F.avg_pool2d(detail, kernel_size=self.stride, stride=self.stride, ceil_mode=True)
+        return self._match_size(detail, size)
+
+    def _space_to_depth(self, x, size):
+        if self.stride == 2:
+            h, w = x.shape[-2:]
+            pad_h = h % 2
+            pad_w = w % 2
+            if pad_h or pad_w:
+                x = F.pad(x, (0, pad_w, 0, pad_h))
+            x = F.pixel_unshuffle(x, 2)
+        elif self.stride > 1:
+            x = F.avg_pool2d(x, kernel_size=self.stride, stride=self.stride, ceil_mode=True)
+        return self._match_size(x, size)
+
+    def forward(self, x):
+        base = self.base_branch(x)
+        size = base.shape[-2:]
+
+        spd = self.spd_branch(self._space_to_depth(x, size))
+
+        detail = self._downsample_detail(x, size)
+        edge = self.edge_fuse(torch.cat((self.edge_h(detail), self.edge_v(detail), self.edge_d(detail)), dim=1))
+
+        scale = self.scale_fuse(torch.cat((self.scale_3(x), self.scale_5(x), self.scale_d(x)), dim=1))
+        scale = self._match_size(scale, size)
+
+        experts = torch.stack((base, spd, edge, scale), dim=1)
+        gate = torch.softmax(self.fusion_gate(torch.cat((base, spd, edge, scale), dim=1)), dim=1)
+        y = (experts * gate.unsqueeze(2)).sum(dim=1)
+        return self.out(y)
+
+
 # ===== add into ultralytics/nn/modules/block.py =====
 import torch
 import torch.nn as nn
